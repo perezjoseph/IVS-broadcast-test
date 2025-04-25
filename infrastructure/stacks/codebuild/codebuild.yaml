@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for AWS CodeBuild project'
+
+Parameters:
+  Environment:
+    Description: The deployment environment
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+      
+  RepositoryURI:
+    Description: The URI of the ECR repository
+    Type: String
+    
+  CodeBuildComputeType:
+    Description: The compute type for the CodeBuild project
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+      
+  CodeBuildImage:
+    Description: The Docker image for the CodeBuild project
+    Type: String
+    Default: aws/codebuild/amazonlinux2-x86_64-standard:4.0
+
+Resources:
+  # CodeBuild IAM Role
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECR-FullAccess
+      Policies:
+        - PolicyName: CodeBuildAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ecr:UploadLayerPart'
+                  - 'ecr:CompleteLayerUpload'
+                  - 'ecr:PutImage'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # S3 Bucket for source code
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CodeBuild Project
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${AWS::StackName}-container-build
+      Description: 'Build Docker container for IVS Streaming Platform'
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: !Ref CodeBuildComputeType
+        Image: !Ref CodeBuildImage
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: ECR_REPOSITORY_URI
+            Value: !Ref RepositoryURI
+      Source:
+        Type: S3
+        Location: !Sub ${ArtifactBucket.Arn}/source.zip
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                - IMAGE_TAG=${COMMIT_HASH:=latest}
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building the Docker image...
+                - docker build -t $ECR_REPOSITORY_URI:latest -t $ECR_REPOSITORY_URI:$IMAGE_TAG .
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker image...
+                - docker push $ECR_REPOSITORY_URI:latest
+                - docker push $ECR_REPOSITORY_URI:$IMAGE_TAG
+                - echo Writing image definitions file...
+                - echo "{\"ImageURI\":\"$ECR_REPOSITORY_URI:latest\"}" > imageDefinitions.json
+          artifacts:
+            files:
+              - imageDefinitions.json
+      TimeoutInMinutes: 15
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  CodeBuildProjectName:
+    Description: The name of the CodeBuild project
+    Value: !Ref CodeBuildProject
+    Export:
+      Name: !Sub ${AWS::StackName}-CodeBuildProjectName
+      
+  CodeBuildProjectArn:
+    Description: The ARN of the CodeBuild project
+    Value: !GetAtt CodeBuildProject.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-CodeBuildProjectArn
+      
+  ArtifactBucketName:
+    Description: The name of the S3 bucket for artifacts
+    Value: !Ref ArtifactBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-ArtifactBucketName

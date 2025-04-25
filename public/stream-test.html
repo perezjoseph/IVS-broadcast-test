@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IVS Streaming Test</title>
+  <script src="https://player.live-video.net/1.20.0/amazon-ivs-player.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .video-container {
+      width: 100%;
+      max-width: 800px;
+      margin: 20px 0;
+    }
+    video {
+      width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .status {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    button {
+      padding: 10px 15px;
+      background: #0d6efd;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>IVS Stream Test</h1>
+
+  <div class="video-container">
+    <video id="video-player" playsinline controls></video>
+  </div>
+
+  <div class="status" id="status">Status: Initializing...</div>
+
+  <div>
+    <input type="text" id="playback-url" value="https://57f31b04fea5.us-east-1.playback.live-video.net/api/video/v1/us-east-1.851725368801.channel.B1gsi467AKe0.m3u8" placeholder="Enter IVS Playback URL">
+    <button id="load-stream">Load Stream</button>
+  </div>
+
+  <div class="status" id="ivs-status">IVS Player Support: Checking...</div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const videoElement = document.getElementById('video-player');
+      const statusElement = document.getElementById('status');
+      const ivsStatusElement = document.getElementById('ivs-status');
+      const playbackUrlInput = document.getElementById('playback-url');
+      const loadButton = document.getElementById('load-stream');
+      
+      let player;
+      
+      // Check if IVS player is supported
+      if (IVSPlayer.isPlayerSupported) {
+        ivsStatusElement.textContent = 'IVS Player Support: Supported';
+        
+        // Initialize player
+        player = IVSPlayer.create();
+        player.attachHTMLVideoElement(videoElement);
+        
+        // Add event listeners
+        player.addEventListener('stateChange', function(state) {
+          statusElement.textContent = 'Status: ' + state;
+          console.log('Player State:', state);
+        });
+        
+        player.addEventListener('error', function(err) {
+          statusElement.textContent = 'Error: ' + err.type;
+          console.error('Player Error:', err);
+        });
+        
+        // Load the stream when button is clicked
+        loadButton.addEventListener('click', function() {
+          const playbackUrl = playbackUrlInput.value.trim();
+          if (playbackUrl) {
+            statusElement.textContent = 'Status: Loading stream...';
+            try {
+              player.load(playbackUrl);
+              player.play();
+            } catch (err) {
+              statusElement.textContent = 'Error: ' + err.message;
+            }
+          } else {
+            statusElement.textContent = 'Error: Please enter a playback URL';
+          }
+        });
+        
+        // Automatically load the default URL
+        const playbackUrl = playbackUrlInput.value.trim();
+        if (playbackUrl) {
+          statusElement.textContent = 'Status: Loading stream...';
+          try {
+            player.load(playbackUrl);
+            player.play();
+          } catch (err) {
+            statusElement.textContent = 'Error: ' + err.message;
+          }
+        }
+      } else {
+        ivsStatusElement.textContent = 'IVS Player Support: Not Supported in this browser';
+        statusElement.textContent = 'Error: Amazon IVS Player is not supported in this browser';
+      }
+    });
+  </script>
+</body>
+</html>

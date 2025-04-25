@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Main CloudFormation template for IVS Streaming Platform'
+
+Parameters:
+  Environment:
+    Description: The deployment environment
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+      
+  TemplatesBucket:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+    Default: ivsproto-templates
+    
+Resources:
+  # VPC and Network Infrastructure
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/stacks/vpc/vpc.yaml
+      Parameters:
+        Environment: !Ref Environment
+      TimeoutInMinutes: 10
+
+  # ECR Repository
+  ECRStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/stacks/ecr/ecr-repository.yaml
+      Parameters:
+        Environment: !Ref Environment
+      TimeoutInMinutes: 10
+
+  # CodeBuild Project
+  CodeBuildStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/stacks/codebuild/codebuild.yaml
+      Parameters:
+        Environment: !Ref Environment
+        RepositoryURI: !GetAtt ECRStack.Outputs.RepositoryURI
+      TimeoutInMinutes: 10
+      DependsOn:
+        - ECRStack
+
+  # ECS Cluster and Services
+  ECSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/stacks/ecs/ecs-service.yaml
+      Parameters:
+        Environment: !Ref Environment
+        VpcId: !GetAtt VPCStack.Outputs.VpcId
+        PublicSubnet1: !GetAtt VPCStack.Outputs.PublicSubnet1
+        PublicSubnet2: !GetAtt VPCStack.Outputs.PublicSubnet2
+        RepositoryURI: !GetAtt ECRStack.Outputs.RepositoryURI
+      TimeoutInMinutes: 30
+      DependsOn: 
+        - VPCStack
+        - ECRStack
+        - CodeBuildStack
+
+  # IVS Resources
+  IVSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/templates/ivs-stack.yaml
+      Parameters:
+        Environment: !Ref Environment
+      TimeoutInMinutes: 15
+
+
+Outputs:
+  ECSClusterURL:
+    Description: The URL of the ECS cluster in the AWS console
+    Value: !Sub https://console.aws.amazon.com/ecs/home?region=${AWS::Region}#/clusters/${ECSStack.Outputs.ClusterName}/services
+    Export:
+      Name: !Sub ${AWS::StackName}-ECSClusterURL
+
+  AppURL:
+    Description: The URL to access the application
+    Value: !GetAtt ECSStack.Outputs.ServiceURL
+    Export:
+      Name: !Sub ${AWS::StackName}-AppURL
+      
+  CodeBuildProjectURL:
+    Description: The URL of the CodeBuild project in the AWS console
+    Value: !Sub https://console.aws.amazon.com/codesuite/codebuild/projects/${CodeBuildStack.Outputs.CodeBuildProjectName}/history?region=${AWS::Region}
+    Export:
+      Name: !Sub ${AWS::StackName}-CodeBuildProjectURL
+      
+  ArtifactBucketName:
+    Description: The name of the S3 bucket for CodeBuild artifacts
+    Value: !GetAtt CodeBuildStack.Outputs.ArtifactBucketName
+    Export:
+      Name: !Sub ${AWS::StackName}-ArtifactBucketName
+
+  IVSPlaybackURL:
+    Description: The URL for RTMPS playback
+    Value: !GetAtt IVSStack.Outputs.PlaybackUrl
+    Export:
+      Name: !Sub ${AWS::StackName}-PlaybackUrl
+
+  IVSIngestEndpoint:
+    Description: The endpoint for RTMPS streaming
+    Value: !GetAtt IVSStack.Outputs.IngestEndpoint
+    Export:
+      Name: !Sub ${AWS::StackName}-IngestEndpoint
+
+  IVSStreamKeyValue:
+    Description: The stream key for broadcasting
+    Value: !GetAtt IVSStack.Outputs.StreamKeyValue
+    Export:
+      Name: !Sub ${AWS::StackName}-StreamKeyValue
