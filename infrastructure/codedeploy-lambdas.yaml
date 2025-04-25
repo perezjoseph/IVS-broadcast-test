@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for CodeDeploy lifecycle hook Lambda functions'
+
+Parameters:
+  Environment:
+    Description: The deployment environment
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+Resources:
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CodeDeployAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codedeploy:PutLifecycleEventHookExecutionStatus
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # BeforeInstall Lambda Function
+  BeforeInstallFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-BeforeInstall
+      Runtime: nodejs16.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context) => {
+            console.log('BeforeInstall hook triggered');
+            console.log(JSON.stringify(event, null, 2));
+            
+            // Always succeed for now - you can add validation logic as needed
+            const deploymentId = event.DeploymentId;
+            const lifecycleEventHookExecutionId = event.LifecycleEventHookExecutionId;
+            
+            const AWS = require('aws-sdk');
+            const codedeploy = new AWS.CodeDeploy();
+            
+            try {
+              await codedeploy.putLifecycleEventHookExecutionStatus({
+                deploymentId: deploymentId,
+                lifecycleEventHookExecutionId: lifecycleEventHookExecutionId,
+                status: 'Succeeded'
+              }).promise();
+              
+              return 'Success';
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            }
+          };
+      Timeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # AfterInstall Lambda Function
+  AfterInstallFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-AfterInstall
+      Runtime: nodejs16.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context) => {
+            console.log('AfterInstall hook triggered');
+            console.log(JSON.stringify(event, null, 2));
+            
+            // Always succeed for now - you can add validation logic as needed
+            const deploymentId = event.DeploymentId;
+            const lifecycleEventHookExecutionId = event.LifecycleEventHookExecutionId;
+            
+            const AWS = require('aws-sdk');
+            const codedeploy = new AWS.CodeDeploy();
+            
+            try {
+              await codedeploy.putLifecycleEventHookExecutionStatus({
+                deploymentId: deploymentId,
+                lifecycleEventHookExecutionId: lifecycleEventHookExecutionId,
+                status: 'Succeeded'
+              }).promise();
+              
+              return 'Success';
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            }
+          };
+      Timeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # AfterAllowTestTraffic Lambda Function
+  AfterAllowTestTrafficFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-AfterAllowTestTraffic
+      Runtime: nodejs16.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          const https = require('https');
+          const http = require('http');
+          
+          exports.handler = async (event, context) => {
+            console.log('AfterAllowTestTraffic hook triggered');
+            console.log(JSON.stringify(event, null, 2));
+            
+            const deploymentId = event.DeploymentId;
+            const lifecycleEventHookExecutionId = event.LifecycleEventHookExecutionId;
+            
+            // Extract test endpoint from event if available
+            let testEndpoint = '';
+            if (event.LifecycleEventHookExecutionId) {
+              // In a real scenario, you'd extract endpoints from the event or use environment variables
+              // This is just a placeholder
+              testEndpoint = process.env.TEST_ENDPOINT || 'http://localhost:8080';
+            }
+            
+            const AWS = require('aws-sdk');
+            const codedeploy = new AWS.CodeDeploy();
+            
+            try {
+              // Perform validation tests here if you have a test endpoint
+              if (testEndpoint) {
+                // Simple health check - just a placeholder
+                // await performHealthCheck(testEndpoint);
+                console.log(`Test endpoint validation skipped: ${testEndpoint}`);
+              }
+              
+              await codedeploy.putLifecycleEventHookExecutionStatus({
+                deploymentId: deploymentId,
+                lifecycleEventHookExecutionId: lifecycleEventHookExecutionId,
+                status: 'Succeeded'
+              }).promise();
+              
+              return 'Success';
+            } catch (error) {
+              console.error('Error:', error);
+              
+              // In a real scenario, you might want to fail the deployment
+              await codedeploy.putLifecycleEventHookExecutionStatus({
+                deploymentId: deploymentId,
+                lifecycleEventHookExecutionId: lifecycleEventHookExecutionId,
+                status: 'Failed'
+              }).promise();
+              
+              throw error;
+            }
+          };
+          
+          // Helper function for HTTP health check - not actually called in this demo
+          function performHealthCheck(endpoint) {
+            return new Promise((resolve, reject) => {
+              const httpLib = endpoint.startsWith('https') ? https : http;
+              
+              const req = httpLib.get(endpoint, (res) => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                  resolve('Health check passed');
+                } else {
+                  reject(new Error(`Health check failed with status code: ${res.statusCode}`));
+                }
+              });
+              
+              req.on('error', (error) => {
+                reject(error);
+              });
+              
+              // Set timeout to 5 seconds
+              req.setTimeout(5000, () => {
+                req.abort();
+                reject(new Error('Health check timed out'));
+              });
+            });
+          }
+      Timeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # BeforeAllowTraffic Lambda Function
+  BeforeAllowTrafficFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-BeforeAllowTraffic
+      Runtime: nodejs16.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context) => {
+            console.log('BeforeAllowTraffic hook triggered');
+            console.log(JSON.stringify(event, null, 2));
+            
+            const deploymentId = event.DeploymentId;
+            const lifecycleEventHookExecutionId = event.LifecycleEventHookExecutionId;
+            
+            const AWS = require('aws-sdk');
+            const codedeploy = new AWS.CodeDeploy();
+            
+            try {
+              // Add pre-traffic validation checks here if needed
+              
+              await codedeploy.putLifecycleEventHookExecutionStatus({
+                deploymentId: deploymentId,
+                lifecycleEventHookExecutionId: lifecycleEventHookExecutionId,
+                status: 'Succeeded'
+              }).promise();
+              
+              return 'Success';
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            }
+          };
+      Timeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # AfterAllowTraffic Lambda Function
+  AfterAllowTrafficFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-AfterAllowTraffic
+      Runtime: nodejs16.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = async (event, context) => {
+            console.log('AfterAllowTraffic hook triggered');
+            console.log(JSON.stringify(event, null, 2));
+            
+            const deploymentId = event.DeploymentId;
+            const lifecycleEventHookExecutionId = event.LifecycleEventHookExecutionId;
+            
+            const AWS = require('aws-sdk');
+            const codedeploy = new AWS.CodeDeploy();
+            
+            try {
+              // Add post-traffic validation checks here if needed
+              
+              await codedeploy.putLifecycleEventHookExecutionStatus({
+                deploymentId: deploymentId,
+                lifecycleEventHookExecutionId: lifecycleEventHookExecutionId,
+                status: 'Succeeded'
+              }).promise();
+              
+              return 'Success';
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            }
+          };
+      Timeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  BeforeInstallFunctionArn:
+    Description: ARN of the BeforeInstall Lambda function
+    Value: !GetAtt BeforeInstallFunction.Arn
+    
+  AfterInstallFunctionArn:
+    Description: ARN of the AfterInstall Lambda function
+    Value: !GetAtt AfterInstallFunction.Arn
+    
+  AfterAllowTestTrafficFunctionArn:
+    Description: ARN of the AfterAllowTestTraffic Lambda function
+    Value: !GetAtt AfterAllowTestTrafficFunction.Arn
+    
+  BeforeAllowTrafficFunctionArn:
+    Description: ARN of the BeforeAllowTraffic Lambda function
+    Value: !GetAtt BeforeAllowTrafficFunction.Arn
+    
+  AfterAllowTrafficFunctionArn:
+    Description: ARN of the AfterAllowTraffic Lambda function
+    Value: !GetAtt AfterAllowTrafficFunction.Arn
