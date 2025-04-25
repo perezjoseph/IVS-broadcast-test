@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MediaPlayer } from 'amazon-ivs-player';
 
 const VideoPlayer = ({ playbackUrl }) => {
   const videoRef = useRef(null);
@@ -14,27 +13,53 @@ const VideoPlayer = ({ playbackUrl }) => {
   const [showPlayerControls, setShowPlayerControls] = useState(true);
 
   useEffect(() => {
-    console.log("Playback URL:", playbackUrl);
-    
-    if (!playbackUrl || !videoRef.current) {
-      setPlayerState("Missing playback URL or video element");
+    // Load the IVS player script dynamically
+    const script = document.createElement('script');
+    script.src = 'https://player.live-video.net/1.20.0/amazon-ivs-player.min.js';
+    script.async = true;
+    script.onload = initializePlayer;
+    document.body.appendChild(script);
+
+    return () => {
+      // Clean up script
+      document.body.removeChild(script);
+      if (playerRef.current) {
+        try {
+          playerRef.current.delete();
+        } catch (err) {
+          console.error("Error cleaning up player:", err);
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // When playbackUrl changes, load the new stream if player is initialized
+    if (playerRef.current && playbackUrl) {
+      loadAndPlayStream();
+    }
+  }, [playbackUrl]);
+
+  const initializePlayer = () => {
+    if (!videoRef.current) {
+      setErrorMessage("Video element not found");
       return;
     }
 
     try {
-      // Check if IVS is supported in the current browser
-      const ivsSupported = MediaPlayer.isPlayerSupported;
+      // Check if IVS player is supported in the current browser
+      const ivsSupported = window.IVSPlayer.isPlayerSupported;
       setIsSupported(ivsSupported);
       console.log("IVS Player supported:", ivsSupported);
       
       if (ivsSupported) {
         // Initialize player
         setPlayerState("Initializing player");
-        playerRef.current = new MediaPlayer();
+        playerRef.current = window.IVSPlayer.create();
         playerRef.current.attachHTMLVideoElement(videoRef.current);
         
         // Add event listeners
-        playerRef.current.addEventListener('stateChanged', (state) => {
+        playerRef.current.addEventListener('stateChange', (state) => {
           setPlayerState(`${state}`);
           setIsPlaying(state === 'Playing');
           console.log('Player State:', state);
@@ -44,20 +69,11 @@ const VideoPlayer = ({ playbackUrl }) => {
           setErrorMessage(`Player error: ${err.type}`);
           console.error('Player Error:', err);
         });
-        
-        // Load and play the stream
-        setPlayerState("Loading stream");
-        playerRef.current.load(playbackUrl);
-        
-        playerRef.current.play()
-          .then(() => {
-            console.log("Playback started");
-            setIsPlaying(true);
-          })
-          .catch(err => {
-            console.error("Play error:", err);
-            setErrorMessage(`Play error: ${err.message}`);
-          });
+
+        // If we have a playbackUrl, load the stream
+        if (playbackUrl) {
+          loadAndPlayStream();
+        }
       } else {
         setPlayerState("IVS Player not supported in this browser");
       }
@@ -65,18 +81,29 @@ const VideoPlayer = ({ playbackUrl }) => {
       console.error("Player initialization error:", err);
       setErrorMessage(`Initialization error: ${err.message}`);
     }
-
-    return () => {
-      // Clean up
-      if (playerRef.current) {
-        try {
-          playerRef.current.delete();
-        } catch (err) {
-          console.error("Error cleaning up player:", err);
-        }
-      }
-    };
-  }, [playbackUrl]);
+  };
+  
+  const loadAndPlayStream = () => {
+    if (!playerRef.current || !playbackUrl) return;
+    
+    try {
+      setPlayerState("Loading stream");
+      playerRef.current.load(playbackUrl);
+      
+      playerRef.current.play()
+        .then(() => {
+          console.log("Playback started");
+          setIsPlaying(true);
+        })
+        .catch(err => {
+          console.error("Play error:", err);
+          setErrorMessage(`Play error: ${err.message}`);
+        });
+    } catch (err) {
+      console.error("Stream loading error:", err);
+      setErrorMessage(`Loading error: ${err.message}`);
+    }
+  };
 
   // Controls functionality
   const togglePlay = () => {
@@ -86,8 +113,12 @@ const VideoPlayer = ({ playbackUrl }) => {
       playerRef.current.pause();
       setIsPlaying(false);
     } else {
-      playerRef.current.play();
-      setIsPlaying(true);
+      playerRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(err => {
+          console.error("Play error:", err);
+          setErrorMessage(`Play error: ${err.message}`);
+        });
     }
   };
   
