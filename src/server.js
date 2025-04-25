@@ -59,6 +59,60 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Comments API endpoints
+let comments = {};
+
+// Get comments for a channel
+app.get('/api/comments/:channelId', (req, res) => {
+  const channelId = req.params.channelId;
+  const channelComments = comments[channelId] || [];
+  
+  res.json(channelComments);
+});
+
+// Add a comment to a channel
+app.post('/api/comments/:channelId', (req, res) => {
+  const channelId = req.params.channelId;
+  const { text, username } = req.body;
+  
+  if (!text || !username) {
+    return res.status(400).json({ error: 'Comment text and username are required' });
+  }
+  
+  const newComment = {
+    id: Date.now(),
+    text,
+    username,
+    timestamp: new Date().toISOString(),
+    likes: 0
+  };
+  
+  // Initialize comments array for this channel if it doesn't exist
+  if (!comments[channelId]) {
+    comments[channelId] = [];
+  }
+  
+  comments[channelId].push(newComment);
+  res.status(201).json(newComment);
+});
+
+// Like a comment
+app.post('/api/comments/:channelId/:commentId/like', (req, res) => {
+  const { channelId, commentId } = req.params;
+  const channelComments = comments[channelId] || [];
+  
+  const commentIndex = channelComments.findIndex(comment => 
+    comment.id === parseInt(commentId));
+  
+  if (commentIndex === -1) {
+    return res.status(404).json({ error: 'Comment not found' });
+  }
+  
+  // Increment like count
+  comments[channelId][commentIndex].likes += 1;
+  res.json(comments[channelId][commentIndex]);
+});
+
 // Hardcoded test endpoint as fallback for development
 app.get('/api/test-config', (req, res) => {
   res.json({

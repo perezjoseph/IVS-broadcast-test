@@ -7,6 +7,11 @@ const VideoPlayer = ({ playbackUrl }) => {
   const [playerState, setPlayerState] = useState("Initializing");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSupported, setIsSupported] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(100);
+  const [isMuted, setIsMuted] = useState(false);
+  const [showPlayerControls, setShowPlayerControls] = useState(true);
 
   useEffect(() => {
     console.log("Playback URL:", playbackUrl);
@@ -30,7 +35,8 @@ const VideoPlayer = ({ playbackUrl }) => {
         
         // Add event listeners
         playerRef.current.addEventListener('stateChanged', (state) => {
-          setPlayerState(`Player state: ${state}`);
+          setPlayerState(`${state}`);
+          setIsPlaying(state === 'Playing');
           console.log('Player State:', state);
         });
         
@@ -43,9 +49,11 @@ const VideoPlayer = ({ playbackUrl }) => {
         setPlayerState("Loading stream");
         playerRef.current.load(playbackUrl);
         
-        setPlayerState("Playing");
         playerRef.current.play()
-          .then(() => console.log("Playback started"))
+          .then(() => {
+            console.log("Playback started");
+            setIsPlaying(true);
+          })
           .catch(err => {
             console.error("Play error:", err);
             setErrorMessage(`Play error: ${err.message}`);
@@ -70,15 +78,131 @@ const VideoPlayer = ({ playbackUrl }) => {
     };
   }, [playbackUrl]);
 
+  // Controls functionality
+  const togglePlay = () => {
+    if (!playerRef.current) return;
+    
+    if (isPlaying) {
+      playerRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      playerRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+  
+  const toggleMute = () => {
+    if (!playerRef.current) return;
+    
+    const newMutedState = !isMuted;
+    playerRef.current.setMuted(newMutedState);
+    setIsMuted(newMutedState);
+  };
+  
+  const handleVolumeChange = (e) => {
+    if (!playerRef.current) return;
+    
+    const newVolume = parseInt(e.target.value);
+    playerRef.current.setVolume(newVolume / 100);
+    setVolume(newVolume);
+    
+    if (newVolume === 0) {
+      setIsMuted(true);
+    } else if (isMuted) {
+      setIsMuted(false);
+    }
+  };
+  
+  const toggleFullscreen = () => {
+    const videoContainer = document.querySelector('.video-container');
+    
+    if (!document.fullscreenElement) {
+      videoContainer.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
   return (
-    <div className="video-container">
-      <video ref={videoRef} playsInline controls width="100%" />
-      <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
-        <p><strong>Player Status:</strong> {playerState}</p>
-        {errorMessage && <p style={{ color: 'red' }}><strong>Error:</strong> {errorMessage}</p>}
-        <p><strong>IVS Supported:</strong> {isSupported ? 'Yes' : 'No'}</p>
-        <p><strong>Playback URL:</strong> {playbackUrl || 'Not provided'}</p>
+    <div 
+      className="video-container"
+      onMouseEnter={() => setShowPlayerControls(true)}
+      onMouseLeave={() => setShowPlayerControls(false)}
+    >
+      <video 
+        ref={videoRef} 
+        playsInline 
+        width="100%" 
+        className="video-player"
+      />
+      
+      {/* Custom video controls */}
+      <div className={`video-controls ${showPlayerControls ? 'visible' : ''}`}>
+        <div className="video-progress">
+          <div className="progress-bar">
+            <div className="progress-filled" style={{ width: '70%' }}></div>
+          </div>
+        </div>
+        
+        <div className="controls-bottom">
+          <button onClick={togglePlay} className="control-button">
+            {isPlaying ? 
+              <span className="material-icon">⏸</span> : 
+              <span className="material-icon">▶</span>
+            }
+          </button>
+          
+          <div className="volume-control">
+            <button onClick={toggleMute} className="control-button">
+              {isMuted ? 
+                <span className="material-icon">🔇</span> : 
+                <span className="material-icon">🔊</span>
+              }
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={isMuted ? 0 : volume}
+              onChange={handleVolumeChange}
+              className="volume-slider"
+            />
+          </div>
+          
+          <div className="player-status">
+            <span>{playerState}</span>
+          </div>
+          
+          <button onClick={toggleFullscreen} className="control-button">
+            {isFullscreen ? 
+              <span className="material-icon">⤦</span> : 
+              <span className="material-icon">⤢</span>
+            }
+          </button>
+        </div>
       </div>
+      
+      {/* Error display */}
+      {errorMessage && (
+        <div className="player-error">
+          <div className="error-content">
+            <span className="error-icon">⚠️</span>
+            <span className="error-message">{errorMessage}</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Unsupported browser warning */}
+      {!isSupported && (
+        <div className="browser-support-warning">
+          <p>Your browser doesn't support the IVS player.</p>
+          <p>Please try Chrome, Firefox, or Safari.</p>
+        </div>
+      )}
     </div>
   );
 };
