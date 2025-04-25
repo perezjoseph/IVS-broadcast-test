@@ -22,7 +22,9 @@ const VideoPlayer = ({ playbackUrl }) => {
 
     return () => {
       // Clean up script
-      document.body.removeChild(script);
+      if (script.parentNode) {
+        document.body.removeChild(script);
+      }
       if (playerRef.current) {
         try {
           playerRef.current.delete();
@@ -43,6 +45,11 @@ const VideoPlayer = ({ playbackUrl }) => {
   const initializePlayer = () => {
     if (!videoRef.current) {
       setErrorMessage("Video element not found");
+      return;
+    }
+
+    if (!window.IVSPlayer) {
+      setErrorMessage("IVS Player not loaded properly");
       return;
     }
 
@@ -90,15 +97,30 @@ const VideoPlayer = ({ playbackUrl }) => {
       setPlayerState("Loading stream");
       playerRef.current.load(playbackUrl);
       
-      playerRef.current.play()
-        .then(() => {
-          console.log("Playback started");
+      // IVS player play() may not return a promise in all versions,
+      // so we need to handle both cases
+      try {
+        const playPromise = playerRef.current.play();
+        
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise
+            .then(() => {
+              console.log("Playback started");
+              setIsPlaying(true);
+            })
+            .catch(err => {
+              console.error("Play promise error:", err);
+              setErrorMessage(`Play error: ${err.message}`);
+            });
+        } else {
+          // If play doesn't return a promise, assume it started playing
+          console.log("Playback started (no promise returned)");
           setIsPlaying(true);
-        })
-        .catch(err => {
-          console.error("Play error:", err);
-          setErrorMessage(`Play error: ${err.message}`);
-        });
+        }
+      } catch (playErr) {
+        console.error("Play execution error:", playErr);
+        setErrorMessage(`Play execution error: ${playErr.message}`);
+      }
     } catch (err) {
       console.error("Stream loading error:", err);
       setErrorMessage(`Loading error: ${err.message}`);
@@ -110,37 +132,64 @@ const VideoPlayer = ({ playbackUrl }) => {
     if (!playerRef.current) return;
     
     if (isPlaying) {
-      playerRef.current.pause();
-      setIsPlaying(false);
+      try {
+        playerRef.current.pause();
+        setIsPlaying(false);
+      } catch (err) {
+        console.error("Pause error:", err);
+        setErrorMessage(`Pause error: ${err.message}`);
+      }
     } else {
-      playerRef.current.play()
-        .then(() => setIsPlaying(true))
-        .catch(err => {
-          console.error("Play error:", err);
-          setErrorMessage(`Play error: ${err.message}`);
-        });
+      try {
+        const playPromise = playerRef.current.play();
+        
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise
+            .then(() => setIsPlaying(true))
+            .catch(err => {
+              console.error("Play promise error:", err);
+              setErrorMessage(`Play error: ${err.message}`);
+            });
+        } else {
+          // If play doesn't return a promise, assume it started playing
+          setIsPlaying(true);
+        }
+      } catch (err) {
+        console.error("Play execution error:", err);
+        setErrorMessage(`Play execution error: ${err.message}`);
+      }
     }
   };
   
   const toggleMute = () => {
     if (!playerRef.current) return;
     
-    const newMutedState = !isMuted;
-    playerRef.current.setMuted(newMutedState);
-    setIsMuted(newMutedState);
+    try {
+      const newMutedState = !isMuted;
+      playerRef.current.setMuted(newMutedState);
+      setIsMuted(newMutedState);
+    } catch (err) {
+      console.error("Mute toggle error:", err);
+      setErrorMessage(`Mute toggle error: ${err.message}`);
+    }
   };
   
   const handleVolumeChange = (e) => {
     if (!playerRef.current) return;
     
-    const newVolume = parseInt(e.target.value);
-    playerRef.current.setVolume(newVolume / 100);
-    setVolume(newVolume);
-    
-    if (newVolume === 0) {
-      setIsMuted(true);
-    } else if (isMuted) {
-      setIsMuted(false);
+    try {
+      const newVolume = parseInt(e.target.value);
+      playerRef.current.setVolume(newVolume / 100);
+      setVolume(newVolume);
+      
+      if (newVolume === 0) {
+        setIsMuted(true);
+      } else if (isMuted) {
+        setIsMuted(false);
+      }
+    } catch (err) {
+      console.error("Volume change error:", err);
+      setErrorMessage(`Volume change error: ${err.message}`);
     }
   };
   
@@ -223,6 +272,12 @@ const VideoPlayer = ({ playbackUrl }) => {
           <div className="error-content">
             <span className="error-icon">⚠️</span>
             <span className="error-message">{errorMessage}</span>
+            <button 
+              onClick={() => setErrorMessage("")}
+              className="dismiss-error"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}

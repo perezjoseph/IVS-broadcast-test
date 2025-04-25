@@ -288,6 +288,7 @@ button {
   color: white;
   padding: 10px;
   text-align: center;
+  z-index: 10;
 }
 
 .error-content {
@@ -295,6 +296,16 @@ button {
   align-items: center;
   justify-content: center;
   gap: 10px;
+}
+
+.dismiss-error {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 5px;
+  margin-left: 5px;
 }
 
 .browser-support-warning {
