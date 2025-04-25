@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simple CloudFormation template for Amazon ECR repository'
+
+Resources:
+  IvsStreamingRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: ivs-streaming
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+Outputs:
+  RepositoryURI:
+    Description: The URI of the ECR repository
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${IvsStreamingRepository}
+      
+  RepositoryName:
+    Description: The name of the ECR repository
+    Value: !Ref IvsStreamingRepository

@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Amazon IVS streaming platform'
+
+Resources:
+  IvsChannel:
+    Type: AWS::IVS::Channel
+    Properties: 
+      Name: !Sub ${AWS::StackName}-channel
+      LatencyMode: LOW
+      Type: STANDARD
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  IvsStreamKey:
+    Type: AWS::IVS::StreamKey
+    Properties:
+      ChannelArn: !GetAtt IvsChannel.Arn
+
+  RecordingsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-recordings-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      AccessControl: Private
+
+  RecordingConfiguration:
+    Type: AWS::IVS::RecordingConfiguration
+    Properties:
+      Name: !Sub ${AWS::StackName}-recording-config
+      RecordingReconnectWindowSeconds: 60
+      DestinationConfiguration:
+        S3:
+          BucketName: !Ref RecordingsS3Bucket
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub ${AWS::StackName}-api
+      Description: API for IVS streaming platform
+
+  # Add a resource and method to the API Gateway
+  ApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "channel"
+
+  ApiGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationHttpMethod: GET
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: |
+                {
+                  "channelArn": "$util.escapeJavaScript($util.urlDecode($input.params('channelArn')))",
+                  "playbackUrl": "$util.escapeJavaScript($util.urlDecode($input.params('playbackUrl')))"
+                }
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: "Empty"
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ApiGatewayMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: prod
+
+Parameters:
+  Environment:
+    Description: The deployment environment
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    
+Outputs:
+  ChannelArn:
+    Description: The ARN of the IVS channel
+    Value: !GetAtt IvsChannel.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ChannelArn
+
+  PlaybackUrl:
+    Description: The URL for RTMPS playback
+    Value: !GetAtt IvsChannel.PlaybackUrl
+    Export:
+      Name: !Sub ${AWS::StackName}-PlaybackUrl
+
+  IngestEndpoint:
+    Description: The endpoint for RTMPS streaming
+    Value: !GetAtt IvsChannel.IngestEndpoint
+    Export:
+      Name: !Sub ${AWS::StackName}-IngestEndpoint
+
+  StreamKeyValue:
+    Description: The stream key for broadcasting
+    Value: !GetAtt IvsStreamKey.Value
+    Export:
+      Name: !Sub ${AWS::StackName}-StreamKeyValue
+
+  ApiEndpoint:
+    Description: The API Gateway endpoint URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiEndpoint

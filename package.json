@@ -1,0 +1,43 @@
+{
+  "name": "ivsproto",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "webpack --mode development && nodemon src/server.js",
+    "build": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "deploy": "aws cloudformation deploy --template-file infrastructure/templates/ivs-stack.yaml --stack-name ivs-streaming-platform --parameter-overrides Environment=dev --capabilities CAPABILITY_IAM",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "streaming",
+    "ivs",
+    "aws"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "A streaming platform using Amazon IVS",
+  "dependencies": {
+    "@aws-sdk/client-ivs": "^3.796.0",
+    "amazon-chime-sdk-js": "^3.27.1",
+    "amazon-ivs-chat-messaging": "^1.1.1",
+    "amazon-ivs-player": "^1.39.0",
+    "dotenv": "^16.5.0",
+    "express": "^4.18.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "@babel/preset-react": "^7.26.3",
+    "babel-loader": "^10.0.0",
+    "css-loader": "^7.1.2",
+    "dotenv-webpack": "^8.1.0",
+    "nodemon": "^3.1.10",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^6.0.1"
+  }
+}

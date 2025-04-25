@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Amazon ECR repository'
+
+Resources:
+  IvsStreamingRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${AWS::StackName}-ivs-streaming
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowPublicPull
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecr:GetDownloadUrlForLayer'
+              - 'ecr:BatchGetImage'
+              - 'ecr:BatchCheckLayerAvailability'
+
+Outputs:
+  RepositoryURI:
+    Description: The URI of the ECR repository
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${IvsStreamingRepository}
+    Export:
+      Name: !Sub ${AWS::StackName}-ECRRepositoryURI
+      
+  RepositoryName:
+    Description: The name of the ECR repository
+    Value: !Ref IvsStreamingRepository
+    Export:
+      Name: !Sub ${AWS::StackName}-ECRRepositoryName

@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for AWS App Runner service'
+
+Parameters:
+  CodeRepository:
+    Type: String
+    Default: https://github.com/perezjoseph/ivs-prototype
+    Description: The URL of the code repository
+
+Resources:
+  AppRunnerAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-source-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Sub ${AWS::StackName}-service
+      SourceConfiguration:
+        CodeRepository:
+          RepositoryUrl: !Ref CodeRepository
+          SourceCodeVersion:
+            Type: BRANCH
+            Value: main
+          CodeConfiguration:
+            ConfigurationSource: REPOSITORY
+        AutoDeploymentsEnabled: true
+      InstanceConfiguration:
+        Cpu: 1
+        Memory: 2
+      HealthCheckConfiguration:
+        Path: "/"
+        Protocol: HTTP
+      EnvironmentVariables:
+        - Name: AWS_REGION
+          Value: !Ref AWS::Region
+        - Name: CHANNEL_ARN
+          Value: !ImportValue ivs-streaming-platform-ChannelArn
+        - Name: PLAYBACK_URL
+          Value: !ImportValue ivs-streaming-platform-PlaybackUrl
+        - Name: INGEST_ENDPOINT
+          Value: !ImportValue ivs-streaming-platform-IngestEndpoint
+        - Name: STREAM_KEY
+          Value: !ImportValue ivs-streaming-platform-StreamKeyValue
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-service
+
+Outputs:
+  ServiceUrl:
+    Description: The URL of the App Runner service
+    Value: !GetAtt AppRunnerService.ServiceUrl
