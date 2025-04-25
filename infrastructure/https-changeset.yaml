@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Change set to add HTTPS support to IVS streaming platform'
+
+Parameters:
+  CertificateArn:
+    Type: String
+    Description: ARN of the ACM certificate to use for HTTPS
+    Default: ''
+    
+Resources:
+  # Request a Public Certificate in ACM (will require validation)
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: NoCertificateProvided
+    Properties:
+      DomainName: !Sub "${AWS::StackName}.example.com"
+      ValidationMethod: DNS
+
+  # Update Security Group to allow HTTPS traffic
+  SecurityGroupHttpsIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: sg-0071e22c72f2d161a  # LoadBalancerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: 0.0.0.0/0
+      Description: Allow HTTPS traffic
+      
+  SecurityGroupHttpsTestIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: sg-0071e22c72f2d161a  # LoadBalancerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8443
+      ToPort: 8443
+      CidrIp: 0.0.0.0/0
+      Description: Allow HTTPS test traffic
+
+  # HTTPS Listener for Production Traffic
+  ProdHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: arn:aws:elasticloadbalancing:us-east-1:851725368801:loadbalancer/app/ivs-streaming-stack-alb/fc2174b5d2859bd2
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !If 
+          - NoCertificateProvided
+          - !Ref Certificate
+          - !Ref CertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: arn:aws:elasticloadbalancing:us-east-1:851725368801:targetgroup/ivs-streaming-stack-prod-tg/c95dbd6f37652335
+
+  # HTTPS Listener for Test Traffic
+  TestHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: arn:aws:elasticloadbalancing:us-east-1:851725368801:loadbalancer/app/ivs-streaming-stack-alb/fc2174b5d2859bd2
+      Port: 8443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !If 
+          - NoCertificateProvided
+          - !Ref Certificate
+          - !Ref CertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: arn:aws:elasticloadbalancing:us-east-1:851725368801:targetgroup/ivs-streaming-stack-test-tg/01ed4bd13934b246
+          
+  # Update HTTP Listener to Redirect to HTTPS
+  UpdateProdHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: arn:aws:elasticloadbalancing:us-east-1:851725368801:listener/app/ivs-streaming-stack-alb/fc2174b5d2859bd2/b6b568b798c2eec1
+      Priority: 1
+      Actions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+      Conditions:
+        - Field: path-pattern
+          Values: 
+            - /*
+            
+  # Update HTTP Test Listener to Redirect to HTTPS
+  UpdateTestHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: arn:aws:elasticloadbalancing:us-east-1:851725368801:listener/app/ivs-streaming-stack-alb/fc2174b5d2859bd2/0d06e4610c6e8b41
+      Priority: 1
+      Actions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "8443"
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+      Conditions:
+        - Field: path-pattern
+          Values: 
+            - /*
+
+Conditions:
+  NoCertificateProvided: !Equals [!Ref CertificateArn, '']
+
+Outputs:
+  HttpsServiceURL:
+    Description: The HTTPS URL of the Application Load Balancer
+    Value: !Sub "https://ivs-streaming-stack-alb-559568584.us-east-1.elb.amazonaws.com"
+    
+  HttpsTestURL:
+    Description: The HTTPS URL for the test traffic endpoint
+    Value: !Sub "https://ivs-streaming-stack-alb-559568584.us-east-1.elb.amazonaws.com:8443"
